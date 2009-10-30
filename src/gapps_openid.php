@@ -195,6 +195,9 @@ class GApps_OpenID_Discovery {
             }
             $body = $http_resp->body;
             $signature = $http_resp->headers["Signature"];
+            if( $signature == null ) {
+                return null;
+            }
             $signed_by = $this->verifier->verify($body, $signature);
             if (!$signed_by) {
                 return null;
