@@ -1,4 +1,4 @@
-<?
+<?php
 /*
 Copyright 2009 Google Inc.
 
@@ -14,6 +14,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+require_once "Auth/OpenID/Consumer.php";
+require_once "Auth/OpenID/Discover.php";
 
 /**
  * Helper class for setting up Auth_OpenID_Consumer instances configured for
@@ -50,7 +53,6 @@ class GApps_OpenID_Discovery {
      * Initializes the helper and modifies the consumer instance to enable
      * OpenID discovery for Google Apps hosted domains. 
      *
-     * 
      * @param Auth_OpenID_Consumer $consumer Consumer instance to enable
      * Google Apps support for.
      * @param array(str) $ca_dirs Array of directories containing trusted
@@ -58,11 +60,11 @@ class GApps_OpenID_Discovery {
      * @param memcache $memcache Optional memcache handle for caching 
      * discovery information.
      */
-    function GApps_OpenID_Discovery($consumer, $trust_roots, $memcache = null) {
+    function GApps_OpenID_Discovery($consumer, $trust_roots = null, $memcache = null) {
         $this->verifier = new GApps_OpenID_SimpleSign($trust_roots);
         $this->memcache = $memcache;
         $consumer->discoverMethod = array($this, 'discover');
-        $consumer->consumer->discoverMethod = array($this, 'discover');        
+        $consumer->consumer->discoverMethod = array($this, 'discover');
     }
     
     /**
@@ -75,9 +77,9 @@ class GApps_OpenID_Discovery {
      * @return array(str,array(Auth_OpenID_ServiceEndpoint))
      */ 
     function discover($url, &$fetcher) {
-        $endpoint = $this->perform_discovery($url, &$fetcher);
-        if ($endpoint != null) {
-            return $endpoint;
+        try {
+            return $this->perform_discovery($url, &$fetcher);
+        } catch (GApps_Discovery_Exception $e) {            
         }
         // Fallback to default discovery mechanism from php-openid
         return Auth_OpenID_discover($url, &$fetcher);
@@ -115,11 +117,9 @@ class GApps_OpenID_Discovery {
     function &discover_site($domain, &$fetcher) {
         $url = $this->fetch_host_meta($domain, &$fetcher);
         $xrds =& $this->fetch_xrds_services($domain, $url, &$fetcher);
-        if ($xrds != null) {
-            $services = $xrds->services(array('filter_MatchesAnyOpenIDType'));
-            $endpoints = Auth_OpenID_makeOpenIDEndpoints($domain, $services);
-            return array($url, $endpoints);
-        }
+        $services = $xrds->services(array('filter_MatchesAnyOpenIDType'));
+        $endpoints = Auth_OpenID_makeOpenIDEndpoints($domain, $services);
+        return array($url, $endpoints);
     }
 
     /*
@@ -134,11 +134,8 @@ class GApps_OpenID_Discovery {
     function &discover_user($domain, $claimed_id, &$fetcher) {
         $site_url = $this->fetch_host_meta($domain, &$fetcher);
         $site_xrds =& $this->fetch_xrds_services($domain, $site_url, &$fetcher);
-        if ($site_xrds == null) {
-            return null;
-        }
         list($user_url,$next_authority) = $this->get_user_xrds_url(&$site_xrds, $claimed_id);
-        $user_xrds =& $this->fetch_xrds_services($next_authority, $user_url, &$fetcher);
+        $user_xrds =& $this->fetch_xrds_services($next_authority, $user_url, &$fetcher, false);
         if ($user_xrds != null) {
             $services = $user_xrds->services(array('filter_MatchesAnyOpenIDType'));
             $endpoints = Auth_OpenID_makeOpenIDEndpoints($claimed_id, $services);
@@ -164,10 +161,10 @@ class GApps_OpenID_Discovery {
         $host_meta_url = sprintf($this->host_meta_template, $domain);
         $http_resp = @$fetcher->get($host_meta_url);
         if ($http_resp->status != 200 and $http_resp->status != 206) {
-            return null;
+            throw new GApps_Discovery_Exception("Received $http_resp->status when fetching $host_meta_url");
         }
         if (!preg_match('/Link: <(.*)>;/', $http_resp->body, $matches)) {
-            return null;
+            throw new GApps_Discovery_Exception("No link found in host-meta for $domain");
         }
         $url = $matches[1];
         $this->put_cache($domain, $url);
@@ -183,30 +180,31 @@ class GApps_OpenID_Discovery {
      * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
      * @return Auth_Yadis_XRDS
      */
-    function &fetch_xrds_services($authority, $url, &$fetcher) {
+    function &fetch_xrds_services($authority, $url, &$fetcher, $use_cache = true) {
         if ($url == null) {
-            return null;
+            throw new GApps_Discovery_Exception("Invalid null URL");
         }
-        $body = $this->get_cache($url);
+        if ($use_cache) {
+            $body = $this->get_cache($url);            
+        }
         if ($body == null) {
             $http_resp = @$fetcher->get($url);
             if ($http_resp->status != 200 and $http_resp->status != 206) {
-                return null;
+                throw new GApps_Discovery_Exception("Received $http_resp->status when fetching $url");
             }
             $body = $http_resp->body;
             $signature = $http_resp->headers["Signature"];
             if( $signature == null ) {
-                return null;
+                throw new GApps_Discovery_Exception("Missing signature header for $url");
             }
             $signed_by = $this->verifier->verify($body, $signature);
-            if (!$signed_by) {
-                return null;
-            }
             if ($signed_by != strtolower($authority) && $signed_by != GApps_OpenID_Discovery::HOSTED_ID) {
-                return false;
+                throw new GApps_Discovery_Exception("Signature from $signed_by not valid for $authority");
             }
             // Signature valid and signed by trusted root by this point.
-            $this->put_cache($url,$body);
+            if ($use_cache) {
+                $this->put_cache($url,$body);   
+            }
         }
         $xrds =& Auth_Yadis_XRDS::parseXRDS($body);
         return $xrds;
@@ -289,6 +287,9 @@ class GApps_OpenID_SimpleSign {
      */
     function GApps_OpenID_SimpleSign($trust_roots = null) {
         $this->trust_roots = $trust_roots;
+        if ($this->trust_roots == null) { 
+            $this->trust_roots = array(dirname(__FILE__)."/ca-bundle.crt");
+        }
     }
 
     /**
@@ -298,7 +299,7 @@ class GApps_OpenID_SimpleSign {
      * @param str $xml XML text to parse
      * @return DOMDocument
      */
-    function parseDoc($xml) {
+    function parse_doc($xml) {
         $doc = new DOMDocument();
         $doc->loadXML( $xml );
         return $doc;
@@ -311,7 +312,7 @@ class GApps_OpenID_SimpleSign {
      * @param DOMDocument $doc Doc to process with XPath
      * @return DOMXPath
      */
-    function getXpath($doc) {
+    function get_xpath($doc) {
         $xp = new DOMXPath($doc);
         $xp->registerNamespace("ds", GApps_OpenID_SimpleSign::NS_DSIG);
         $xp->registerNamespace("xrds", GApps_OpenID_SimpleSign::NS_XRDS);
@@ -325,15 +326,15 @@ class GApps_OpenID_SimpleSign {
      * @param DOMXPath $xpath XPath processor for doc
      * @return bool
      */
-    function validateXML($xpath) {
+    function validate_xml($xpath) {
         $c14n = $xpath->query("//ds:SignedInfo/ds:CanonicalizationMethod/@Algorithm")->item(0)->value;
         $algorithm = $xpath->evaluate("//ds:SignedInfo/ds:SignatureMethod/@Algorithm")->item(0)->value;
         if ($c14n != GApps_OpenID_SimpleSign::C14N_RAW_OCTETS) {
             // Only support XML SimpleSign
-            return false;
+            throw new GApps_Discovery_Exception("Unsupported canonicalization alogithm $c14n");
         }
         if ($algorithm != GApps_OpenID_SimpleSign::SIGN_RSA_SHA1) {
-            return false;
+            throw new GApps_Discovery_Exception("Unsupported signature algorithm $algorithm");
         }
         return true;
     }
@@ -345,7 +346,7 @@ class GApps_OpenID_SimpleSign {
      * @param DOMXPath $xpath XPath processor for doc
      * @return array(str)
      */
-    function parseCertificates($xpath) {
+    function parse_certificates($xpath) {
         $nodes = $xpath->query("//ds:Signature/ds:KeyInfo/ds:X509Data/ds:X509Certificate/text()");
         $certs = array();
         foreach ($nodes as $node) {
@@ -365,7 +366,7 @@ class GApps_OpenID_SimpleSign {
      * @param DOMXPath $xpath XPath processor for doc
      * @return str
      */
-    function saveCertChain($certs) {
+    function save_cert_chain($certs) {
         $chain = implode("", $certs);
         $fname = tempnam(sys_get_temp_dir(), "cert");
         $handle = fopen($fname,"w");
@@ -374,6 +375,15 @@ class GApps_OpenID_SimpleSign {
             fclose($handle);            
             return $fname;        
         }
+    }
+
+    function validate_chain($certs) {
+        // Since we may have multiple certs in the XML, save the chain to a temp file
+        // so we an pass as a list of untrusted certs to verify. 
+        $untrusted_file = $this->save_cert_chain($certs);
+        $trusted = openssl_x509_checkpurpose($certs[0], X509_PURPOSE_ANY, $this->trust_roots, $untrusted_file);
+        unlink($untrusted_file);
+        return $trusted;
     }
 
     /**
@@ -387,33 +397,34 @@ class GApps_OpenID_SimpleSign {
      * @returns str
      */
     function verify($xml, $signature_value) {
-        $doc = $this->parseDoc($xml);
-        $xp = $this->getXPath($doc);
+        $doc = $this->parse_doc($xml);
+        $xp = $this->get_xpath($doc);
         
-        $valid = $this->validateXML($xp);
-        $certs = $this->parseCertificates($xp);
+        $valid = $this->validate_xml($xp);
+        $certs = $this->parse_certificates($xp);
         
         $cert = openssl_x509_read($certs[0]);
+        $parsed_certificate = openssl_x509_parse($cert);
         $pubkey = openssl_pkey_get_public($cert);
         $valid = openssl_verify($xml, base64_decode($signature_value), $pubkey);
-        $signed_by = null;
-        if ($valid) {
-            // Since we may have multiple certs in the XML, save the chain to a temp file
-            // so we an pass as a list of untrusted certs to verify. 
-            $untrusted_file = $this->saveCertChain($certs);
-            $trusted = openssl_x509_checkpurpose($certs[0], X509_PURPOSE_ANY, $this->trust_roots, $untrusted_file);
-            if ($trusted) {
-                $parsed_certificate = openssl_x509_parse($cert);
-                $subject = $parsed_certificate["subject"];
-                $signed_by = strtolower($subject["CN"]);
-            }
-            unlink($untrusted_file);
-        }
 
         openssl_pkey_free($pubkey);
         openssl_x509_free($cert);
-                
+
+        $signed_by = null;
+        if (!$valid) {
+            throw new GApps_Discovery_Exception("Signature verification failed.");
+        }
+        
+        $trusted = $this->validate_chain($certs);
+        if (!$trusted) {
+            throw new GApps_Discovery_Exception("Can not verify trust chian.");
+        }
+        $subject = $parsed_certificate["subject"];
+        $signed_by = strtolower($subject["CN"]);                
         return $signed_by;
     }    
 }
+
+class GApps_Discovery_Exception extends Exception {}
 ?>
