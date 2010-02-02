@@ -4,11 +4,17 @@ require_once 'fixtures.php';
 require_once 'Auth/OpenID/DumbStore.php'; 
 require_once 'Auth/OpenID/google_discovery.php';
 
-class SimpleSignTest extends PHPUnit_Framework_TestCase {
+class SimplesignTest extends PHPUnit_Framework_TestCase {
 
     function setUp() {
         $this->fetcher =& Auth_Yadis_Yadis::getHTTPFetcher();
         $this->signer = new GApps_OpenID_SimpleSign();
+        
+        $store = new Auth_OpenID_DumbStore("test");
+        $consumer = new Auth_OpenID_Consumer($store);
+        $this->discovery = new GApps_OpenID_Discovery($consumer);      
+        $this->fetcher =& Auth_Yadis_Yadis::getHTTPFetcher();
+        $this->discovery->perform_discovery("google.com", &$this->fetcher);      
     }
     
     function test_parse_certs_valid() {      
@@ -56,16 +62,17 @@ class SimpleSignTest extends PHPUnit_Framework_TestCase {
 
     function test_verify_signature_ok() {
         $xml = GApps_Test_Fixtures::read_file('google-site-xrds.xml');
-        $authority = $this->signer->verify($xml, "euSfbCHW/sioRp++r8QKNsSUGM0p75q5CMPdbtnhPaBdBvX3eM90HiPAAg7N8fIqaY1z1xo8njNXuZXb"
-            ."JIRmgXMCS34N6mKjtzwvkMgt2VlkADffN7DqEDoNcYXQ1l5xu+B4Cbxa9prTaItUr+wrnQ31kwlq6m5z9rTlZlcJlYE=");
+        $authority = $this->signer->verify($xml, 
+"dnz8fjQm9dEQ7xQdhAvZmtJBI1vxsKPeDj9iKUM3qE2GuiuqcrzKQHHGeQiobZm5JBRNQa48BbCmGeG9DDTpuRuwMndhTZ1PVXODQhyBH0PDisH1OyePCMsSsbzTfh34n9wW/XqUGjfHN4P+IzC4cjwXPuVNhiZ7f3iv7sToka0=");
         $this->assertEquals("hosted-id.google.com", $authority, "Invalid authority");
     }
 
     function test_verify_bad_signature() {
         $xml = GApps_Test_Fixtures::read_file('google-site-xrds.xml');
         try {
-            $this->signer->verify($xml,"AGYbbl99vk2GoK4+HEBPuu6buV5YWMtX2fk5TNNTiMweXC+bibnJ6KqSqMVKz6IjB3S9ONbnTUdntJhdmlq"
-                ."Q0Or9nTRjCPNz/bkEQ3/l0NOP4DMVbx5yhzp2QeZ86MNy9biD+Z6HsHl49X3puB8zBQ7vG2mIrJ+jE/cNZwCPNio=");
+            $this->signer->verify($xml,
+                "AGYbbl99vk2GoK4+HEBPuu6buV5YWMtX2fk5TNNTiMweXC+bibnJ6KqSqMVKz6IjB3S9ONbnTUdntJhdmlq" .
+                "Q0Or9nTRjCPNz/bkEQ3/l0NOP4DMVbx5yhzp2QeZ86MNy9biD+Z6HsHl49X3puB8zBQ7vG2mIrJ+jE/cNZwCPNio=");
             $this->fail("Expected no authority");
         } catch (GApps_Discovery_Exception $e) {
         }

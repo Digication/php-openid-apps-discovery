@@ -4,7 +4,11 @@ require_once 'fixtures.php';
 require_once 'Auth/OpenID/DumbStore.php'; 
 require_once 'Auth/OpenID/google_discovery.php';
 
+function ignoreErrorHandler($errno, $errstr, $errfile, $errline) {
+}
+
 class DiscoveryTest extends PHPUnit_Framework_TestCase {
+
 
     protected function setUp() {
         $store = new Auth_OpenID_DumbStore("test");
@@ -19,10 +23,9 @@ class DiscoveryTest extends PHPUnit_Framework_TestCase {
     }  
   
     function test_fetch_no_host_meta() {
-        try {
-            $url = $this->discovery->fetch_host_meta("___NOT_A_VALID_DOMAIN__.com", $this->fetcher);   
-            $this->fail("Discovery should have failed.");
-        } catch (GApps_Discovery_Exception $e) {}
+        set_error_handler("ignoreErrorHandler");
+        $url = $this->discovery->fetch_host_meta("___NOT_A_VALID_DOMAIN__.com", $this->fetcher);   
+        $this->assertNull($url, "Did not expect host meta");
     }
     
     function test_fetch_xrds() {
@@ -30,6 +33,7 @@ class DiscoveryTest extends PHPUnit_Framework_TestCase {
         $xrds = $this->discovery->fetch_xrds_services("google.com", $url, &$this->fetcher);
         $this->assertNotNull($xrds, "Should have found XRDS for google.com");    
     }
+    
     
     function test_get_user_xrds_url() {
         $xml = GApps_Test_Fixtures::read_file("google-site-xrds.xml");
@@ -51,10 +55,9 @@ class DiscoveryTest extends PHPUnit_Framework_TestCase {
     }
     
     function test_fail_discover() {
-        try {
-            $info = $this->discovery->perform_discovery("yahoo.com", &$this->fetcher);
-            $this->fail("Discovery should have failed.");
-        } catch (GApps_Discovery_Exception $e) {}
+        set_error_handler("ignoreErrorHandler");
+        $info = $this->discovery->perform_discovery("yahoo.com", &$this->fetcher);
+        $this->assertNull($url, "Did not expect successful discovery");
     }
 }
 ?>

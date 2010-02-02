@@ -18,6 +18,7 @@ limitations under the License.
 require_once "Auth/OpenID/Consumer.php";
 require_once "Auth/OpenID/Discover.php";
 
+
 /**
  * Helper class for setting up Auth_OpenID_Consumer instances configured for
  * use with Google Apps as the default IDP.  Allows discovery of the IDP for
@@ -78,8 +79,12 @@ class GApps_OpenID_Discovery {
      */ 
     function discover($url, &$fetcher) {
         try {
-            return $this->perform_discovery($url, &$fetcher);
-        } catch (GApps_Discovery_Exception $e) {            
+            $info = $this->perform_discovery($url, &$fetcher);
+            if ($info != null) {
+                return $info;
+            }
+        } catch (Exception $e) {
+            trigger_error("Error while attempting OpenID discovery: " . $e->getMessage(), E_USER_ERROR);            
         }
         // Fallback to default discovery mechanism from php-openid
         return Auth_OpenID_discover($url, &$fetcher);
@@ -116,6 +121,9 @@ class GApps_OpenID_Discovery {
      */
     function &discover_site($domain, &$fetcher) {
         $url = $this->fetch_host_meta($domain, &$fetcher);
+        if ($url == null) {
+            return;
+        }
         $xrds =& $this->fetch_xrds_services($domain, $url, &$fetcher);
         $services = $xrds->services(array('filter_MatchesAnyOpenIDType'));
         $endpoints = Auth_OpenID_makeOpenIDEndpoints($domain, $services);
@@ -133,6 +141,9 @@ class GApps_OpenID_Discovery {
      */
     function &discover_user($domain, $claimed_id, &$fetcher) {
         $site_url = $this->fetch_host_meta($domain, &$fetcher);
+        if ($site_url == null) {
+            return;
+        }
         $site_xrds =& $this->fetch_xrds_services($domain, $site_url, &$fetcher);
         list($user_url,$next_authority) = $this->get_user_xrds_url(&$site_xrds, $claimed_id);
         $user_xrds =& $this->fetch_xrds_services($next_authority, $user_url, &$fetcher, false);
@@ -161,7 +172,8 @@ class GApps_OpenID_Discovery {
         $host_meta_url = sprintf($this->host_meta_template, $domain);
         $http_resp = @$fetcher->get($host_meta_url);
         if ($http_resp->status != 200 and $http_resp->status != 206) {
-            throw new GApps_Discovery_Exception("Received $http_resp->status when fetching $host_meta_url");
+            trigger_error("Received $http_resp->status when fetching $host_meta_url", E_USER_NOTICE);
+            return null;
         }
         if (!preg_match('/Link: <(.*)>;/', $http_resp->body, $matches)) {
             throw new GApps_Discovery_Exception("No link found in host-meta for $domain");
@@ -288,7 +300,8 @@ class GApps_OpenID_SimpleSign {
     function GApps_OpenID_SimpleSign($trust_roots = null) {
         $this->trust_roots = $trust_roots;
         if ($this->trust_roots == null) { 
-            $this->trust_roots = array(dirname(__FILE__)."/ca-bundle.crt");
+            $file = dirname(__FILE__)."/ca-bundle.crt";
+            $this->trust_roots = array($file);
         }
     }
 
@@ -382,6 +395,7 @@ class GApps_OpenID_SimpleSign {
         // so we an pass as a list of untrusted certs to verify. 
         $untrusted_file = $this->save_cert_chain($certs);
         $trusted = openssl_x509_checkpurpose($certs[0], X509_PURPOSE_ANY, $this->trust_roots, $untrusted_file);
+        $msg = openssl_error_string();
         unlink($untrusted_file);
         return $trusted;
     }
@@ -418,7 +432,7 @@ class GApps_OpenID_SimpleSign {
         
         $trusted = $this->validate_chain($certs);
         if (!$trusted) {
-            throw new GApps_Discovery_Exception("Can not verify trust chian.");
+            throw new GApps_Discovery_Exception("Can not verify trust chain.");
         }
         $subject = $parsed_certificate["subject"];
         $signed_by = strtolower($subject["CN"]);                
