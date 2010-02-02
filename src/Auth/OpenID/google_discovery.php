@@ -68,18 +68,18 @@ class GApps_OpenID_Discovery {
         $consumer->consumer->discoverMethod = array($this, 'discover');
     }
     
-    /**
+    /**$
      * Discovery implementation that supports Google Apps hosted domains.
      * This discovery method will fall back to Auth_OpenID_discover if the id is not
      * a valid Google Apps hosted domain.
      * 
      * @param str $url Either the domain name of the Google Apps domain or an OpenID id to discover
-     * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
+     * @param Auth_Yadis_HTTPFetcher $fetcher HTTP client for fetching discovery information.
      * @return array(str,array(Auth_OpenID_ServiceEndpoint))
      */ 
-    function discover($url, &$fetcher) {
+    function discover($url, $fetcher) {
         try {
-            $info = $this->perform_discovery($url, &$fetcher);
+            $info = $this->perform_discovery($url, $fetcher);
             if ($info != null) {
                 return $info;
             }
@@ -87,7 +87,7 @@ class GApps_OpenID_Discovery {
             trigger_error("Error while attempting OpenID discovery: " . $e->getMessage(), E_USER_ERROR);            
         }
         // Fallback to default discovery mechanism from php-openid
-        return Auth_OpenID_discover($url, &$fetcher);
+        return Auth_OpenID_discover($url, $fetcher);
     }
 
     /**
@@ -99,16 +99,16 @@ class GApps_OpenID_Discovery {
      *
      * @access private
      * @param str $url Either the domain name of the Google Apps domain or an OpenID id to discover
-     * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
+     * @param Auth_Yadis_HTTPFetcher $fetcher HTTP client for fetching discovery information.
      * @return array(str,array(Auth_OpenID_ServiceEndpoint))
      */ 
-    function &perform_discovery($url, &$fetcher) {
+    function &perform_discovery($url, $fetcher) {
         if (preg_match('_^.*://(.*?)/.*_', $url, $matches)) {
             $domain = $matches[1];
             $claimed_id = $url;
-            return $this->discover_user($domain, $claimed_id, &$fetcher);
+            return $this->discover_user($domain, $claimed_id, $fetcher);
         } 
-        return $this->discover_site($url, &$fetcher);
+        return $this->discover_site($url, $fetcher);
     }
 
     /*
@@ -116,15 +116,15 @@ class GApps_OpenID_Discovery {
      *
      * @access private
      * @param str $url Domain name to perform discovery on
-     * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
+     * @param Auth_Yadis_HTTPFetcher $fetcher HTTP client for fetching discovery information.
      * @return array(str,array(Auth_OpenID_ServiceEndpoint))
      */
-    function &discover_site($domain, &$fetcher) {
-        $url = $this->fetch_host_meta($domain, &$fetcher);
+    function &discover_site($domain, $fetcher) {
+        $url = $this->fetch_host_meta($domain, $fetcher);
         if ($url == null) {
             return;
         }
-        $xrds =& $this->fetch_xrds_services($domain, $url, &$fetcher);
+        $xrds =& $this->fetch_xrds_services($domain, $url, $fetcher);
         $services = $xrds->services(array('filter_MatchesAnyOpenIDType'));
         $endpoints = Auth_OpenID_makeOpenIDEndpoints($domain, $services);
         return array($url, $endpoints);
@@ -136,17 +136,17 @@ class GApps_OpenID_Discovery {
      * @access private
      * @param str $domain Domain name to perform discovery on
      * @param str $claimed_id User's claimed id
-     * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
+     * @param Auth_Yadis_HTTPFetcher $fetcher HTTP client for fetching discovery information.
      * @return array(str,array(Auth_OpenID_ServiceEndpoint))
      */
-    function &discover_user($domain, $claimed_id, &$fetcher) {
-        $site_url = $this->fetch_host_meta($domain, &$fetcher);
+    function &discover_user($domain, $claimed_id, $fetcher) {
+        $site_url = $this->fetch_host_meta($domain, $fetcher);
         if ($site_url == null) {
             return;
         }
-        $site_xrds =& $this->fetch_xrds_services($domain, $site_url, &$fetcher);
-        list($user_url,$next_authority) = $this->get_user_xrds_url(&$site_xrds, $claimed_id);
-        $user_xrds =& $this->fetch_xrds_services($next_authority, $user_url, &$fetcher, false);
+        $site_xrds =& $this->fetch_xrds_services($domain, $site_url, $fetcher);
+        list($user_url,$next_authority) = $this->get_user_xrds_url($site_xrds, $claimed_id);
+        $user_xrds =& $this->fetch_xrds_services($next_authority, $user_url, $fetcher, false);
         if ($user_xrds != null) {
             $services = $user_xrds->services(array('filter_MatchesAnyOpenIDType'));
             $endpoints = Auth_OpenID_makeOpenIDEndpoints($claimed_id, $services);
@@ -161,10 +161,10 @@ class GApps_OpenID_Discovery {
      *
      * @access private
      * @param str $domain Domain name to perform discovery on
-     * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
+     * @param Auth_Yadis_HTTPFetcher $fetcher HTTP client for fetching discovery information.
      * @return str
      */
-    function fetch_host_meta($domain, &$fetcher) {
+    function fetch_host_meta($domain, $fetcher) {
         $cached = $this->get_cache($domain);
         if ($cached != null) {
             return $cached;
@@ -189,10 +189,10 @@ class GApps_OpenID_Discovery {
      * @access private
      * @param str $authority Domain name that is authorative for the URL
      * @param str $url to fetch from
-     * @param Auth_Yadis_HTTPFetcher &$fetcher HTTP client for fetching discovery information.
+     * @param Auth_Yadis_HTTPFetcher $fetcher HTTP client for fetching discovery information.
      * @return Auth_Yadis_XRDS
      */
-    function &fetch_xrds_services($authority, $url, &$fetcher, $use_cache = true) {
+    function &fetch_xrds_services($authority, $url, $fetcher, $use_cache = true) {
         if ($url == null) {
             throw new GApps_Discovery_Exception("Invalid null URL");
         }
@@ -227,11 +227,11 @@ class GApps_OpenID_Discovery {
      * Returns a URL used to fetch the XRDS for the claimed ID.
      *
      * @access private
-     * @param Auth_Yadis_XRDS &$xrds Service description to extract from
+     * @param Auth_Yadis_XRDS $xrds Service description to extract from
      * @param str $claimed_id User's claimed ID
      * @return aray(str)
      */
-    function get_user_xrds_url(&$xrds, $claimed_id) {
+    function get_user_xrds_url($xrds, $claimed_id) {
         $types_to_match = array(GApps_OpenID_Discovery::DESCRIBED_BY_TYPE);
         foreach(@$xrds->services() as $service) {
             if ($service->matchTypes($types_to_match)) {
