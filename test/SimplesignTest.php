@@ -33,6 +33,7 @@ class SimplesignTest extends PHPUnit_Framework_TestCase {
       $this->assertEquals(0, sizeof($certs), "Expected no certificates");
     }
 
+
     function test_parse_malformed_certs() {
         $xml = GApps_Test_Fixtures::read_file('malformed-cert.xml');
         $doc = $this->signer->parse_doc($xml);
@@ -63,7 +64,7 @@ class SimplesignTest extends PHPUnit_Framework_TestCase {
     function test_verify_signature_ok() {
         $xml = GApps_Test_Fixtures::read_file('google-site-xrds.xml');
         $authority = $this->signer->verify($xml, 
-"dnz8fjQm9dEQ7xQdhAvZmtJBI1vxsKPeDj9iKUM3qE2GuiuqcrzKQHHGeQiobZm5JBRNQa48BbCmGeG9DDTpuRuwMndhTZ1PVXODQhyBH0PDisH1OyePCMsSsbzTfh34n9wW/XqUGjfHN4P+IzC4cjwXPuVNhiZ7f3iv7sToka0=");
+"OTMxjJnJlg+QOFDp23QfckMaXXvcImd0P6l9sgt86WNDwO1a0ajT9RFw6E0xSoEV6EkGLFP/a4SIBT6Px5cnzuM7Fa2ndJLgywVKnLfQPi78rSQ7rbl+c560GTZVO8jRJyg4DHduFs+ggiBHBA7SdtsseoEG1/1UhmCrA1JTpl0=");
         $this->assertEquals("hosted-id.google.com", $authority, "Invalid authority");
     }
 
@@ -76,6 +77,12 @@ class SimplesignTest extends PHPUnit_Framework_TestCase {
             $this->fail("Expected no authority");
         } catch (GApps_Discovery_Exception $e) {
         }
+    }
+
+    function test_verify_unsigned() {
+        $xml = GApps_Test_Fixtures::read_file('missing-signature.xml');
+        $authority = $this->signer->verify($xml, null);
+        $this->assertEquals(null, $authority, "Authority for unsigned doc should be null");
     }
 
 }

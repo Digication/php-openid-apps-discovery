@@ -48,6 +48,12 @@ class DiscoveryTest extends PHPUnit_Framework_TestCase {
         $info = $this->discovery->perform_discovery("google.com", &$this->fetcher);
         $this->assertNotNull($info); 
     }
+
+    function test_unsigned_discove() {
+        $info = $this->discovery->perform_discovery("gmail.com", &$this->fetcher);
+        $this->assertNotNull($info); 
+    }
+
   
     function test_user_discover() {
         $info = $this->discovery->perform_discovery("http://google.com/openid?id=109052429299753016317", &$this->fetcher);
