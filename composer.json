@@ -1,0 +1,13 @@
+{
+    "name": "digication/php-openid-apps-discovery",
+    "description": "PHP OpenID library to support the discovery protocol used by Google Apps",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/Digication/php-openid.git"
+        }
+    ],
+    "require": {
+        "digication/php-openid": "dev-master"
+    }
+}
