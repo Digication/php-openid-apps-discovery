@@ -9,5 +9,8 @@
     ],
     "require": {
         "digication/php-openid": "dev-master"
-    }
+    },
+	"autoload": {
+		"classmap": ["src/"]
+	}
 }
